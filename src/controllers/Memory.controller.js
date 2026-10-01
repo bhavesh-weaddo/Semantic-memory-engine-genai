@@ -37,6 +37,13 @@ class MemoryController {
         return responseHandler(res, response, "memory fetched successfully!", 200)
     })
 
+    hybridSearch = asyncHandler(async (req, res) => {
+        const { keyword } = req.body;
+        if (!keyword) { return responseHandler(res, null, 'keyword is required to perform hybrid search', 400) }
+        let result = await this.memoryService.hybridSearch(keyword, this.user_id);
+        return responseHandler(res, result, "memory fetched successfully!", 200)
+    })
+
 
 
 

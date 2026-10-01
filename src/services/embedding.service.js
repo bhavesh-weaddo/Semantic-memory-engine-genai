@@ -49,7 +49,14 @@ class MemoryService {
             let userEmbeddings = await this.createEmbeddings(userQuery);
             let query = "SELECT id , memory , (1 - (embeddings <=>$1::vector)) as similarity_score from memories where (1 - (embeddings <=>$1::vector)) > $3 and user_id =$4    order by  embeddings <=>$1::vector LIMIT $2"
             let res = await this.db.query(query, [`[${userEmbeddings.join(',')}]`, 5, 0.30, user_id])
-            return res.rows
+            let memories = res.rows;
+            let memoriesId = []
+            for (let memory of memories) {
+                memoriesId.push(memory["id"])
+            }
+            let updateQuery = "UPDATE memories set  last_access_at =NOW() where id = ANY($1::int[])"
+            await this.db.query(updateQuery, [memoriesId])
+            return memories
 
         } catch (err) {
             console.log("ERROR: ", err)
@@ -424,6 +431,47 @@ class MemoryService {
                 question: memory
             };
         } catch (err) {
+            throw err;
+        }
+    }
+
+    hybridSearch = async (keyword, user_id) => {
+        try {
+            // keyword search
+            let query = "SELECT id ,memory,user_id,last_access_at, memory_type FROM memories where memory ILIKE $1 and  user_id = $2";
+            let keywordResult = await this.db.query(query, [`%${keyword}%`, user_id])
+
+            // whole memory search
+            let memoryResult = await this.fetchMemory(keyword, user_id)
+            // let combineResult = [...keywordResult.rows, ...memoryResult]
+            let uniqueResult = new Map()
+
+            for (let item of keywordResult.rows) {
+                uniqueResult.set(item.id, {
+                    ...item,
+                    keyword_match: true
+                })
+            }
+            for (let item of memoryResult) {
+                if (uniqueResult.has(item.id)) {
+                    uniqueResult.set(item.id,{
+                        ...uniqueResult.get(item.id),
+                        similarity_score:item.similarity_score,
+                        memory_match:true
+
+                    })
+
+                } else {
+                    uniqueResult.set(item.id, {
+                        ...item,
+                        semantic_match: true
+                    })
+                }
+            }
+            console.log("uniqueResult", uniqueResult)
+            return [...uniqueResult.values()]
+        } catch (err) {
+            console.log(err);
             throw err;
         }
     }
